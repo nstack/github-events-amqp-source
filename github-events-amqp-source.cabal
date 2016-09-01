@@ -20,8 +20,8 @@ executable github-events-amqp-source
   -- other-modules:       
   -- other-extensions:    
   build-depends:       base >=4.9 && <4.10,
-                       aeson >=0.11.2.1,
                        amqp >=0.14.0,
+                       bytestring >=0.10.8.1,
                        free >=4.12.4,
                        lens >=4.14,
                        lens-aeson >=1.0.0.5,
@@ -29,7 +29,7 @@ executable github-events-amqp-source
                        optparse-applicative >=0.12.1.0,
                        text >=1.2.2.1,
                        thyme >=0.3.5.5,
-                       transformers >=0.5.2.0,
+                       -- transformers >=0.5.2.0,
                        vector-space >=0.10.3,
                        wreq >=0.4.1.0
   hs-source-dirs:      src

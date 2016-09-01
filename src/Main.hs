@@ -2,23 +2,21 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
 module Main where
 import Control.Lens                         -- from: lens
 import Control.Monad.Except                 -- from: mtl
-import Control.Monad.Reader                 -- from: mtl
 import Control.Monad.State                  -- from: mtl
-import Control.Monad.Trans                  -- from: mtl
+import Control.Monad.Trans (MonadIO(..))    -- from: mtl
 import Control.Monad.Trans.Free             -- from: free
-import Control.Monad.Trans.Maybe            -- from: transformers
-import Data.Aeson                           -- from: aeson
 import Data.Aeson.Lens                      -- from: lens-aeson
 import Data.AffineSpace ((.-.))             -- from: vector-space
+import Data.ByteString.Lazy (ByteString)    -- from: bytestring
 import Data.Foldable
-import Data.List
-import Data.Monoid
+import Data.List (sortBy)
+import Data.Monoid ((<>))
 import Data.Ratio ((%))
 import Data.Text (Text, pack, unpack)       -- from: text
-import qualified Data.Text as T             -- from: text
 import Data.Text.Lazy (fromStrict)          -- from: text
 import Data.Text.Lazy.Encoding (encodeUtf8) -- from: text
 import Data.Thyme.Time                      -- from: thyme
@@ -42,7 +40,7 @@ type EventId = Integer
 type SleepTime = Int
 type LastSeenEvent = Max EventId
 
-data PollError = StatusError Int | BodyError String
+data PollError = StatusError Int
   deriving (Eq, Show)
 
 data EventType = PushEvent
@@ -79,28 +77,23 @@ run f = void . flip runStateT mempty . forever . logErrors $ getData >>= flip ge
 logErrors :: (Show r, MonadIO m) => ExceptT r m a -> m ()
 logErrors m = runExceptT m >>= either (liftIO . print) (void . return)
 
-getData :: (MonadError PollError m, MonadIO m) => m Value
+getData :: (MonadError PollError m, MonadIO m) => m (Wreq.Response ByteString)
 getData = do r <- liftIO $ Wreq.get "https://api.github.com/events?per_page=200"
-             liftIO $ inspectRateLimit r
              case r ^. responseStatus . statusCode of
-               200 -> return ()
+               200 -> return r
                x   -> throwError $ StatusError x
-             case eitherDecode (r ^. responseBody) of
-               Left e -> throwError $ BodyError e
-               Right x -> return x
 
 inspectRateLimit :: Wreq.Response body -> IO (Maybe NominalDiffTime)
 inspectRateLimit r = let foo = r ^? responseHeader "X-RateLimit-Reset" . _Integer . nomd . posx
                          bar = r ^? responseHeader "X-RateLimit-Remaining" . _Integer
-                         quz = (,) <$> foo <*> bar
                      in sequence $ do foo >>= \a -> bar >>= \b -> return $ do
                                         cur <- getCurrentTime
                                         return $ (a .-. cur) ^/ (b % 1)
-  where nomd = lens fromSeconds $ \_ -> truncate . toSeconds
+  where nomd = lens fromSeconds $ \_ -> truncate @Double . toSeconds
         posx = iso posixSecondsToUTCTime utcTimeToPOSIXSeconds
 
-getRepos :: Applicative m => Value -> (Event -> m ()) -> m ()
-getRepos v k = traverse_ k . sortBy sortf $ v ^.. values . test
+getRepos :: (AsValue body, Applicative m) => Wreq.Response body -> (Event -> m ()) -> m ()
+getRepos r k = traverse_ k . sortBy sortf $ r ^.. responseBody . values . test
   where sortf = curry $ uncurry compare . (view $ eventId `alongside` eventId)
 
 trackEvents :: (MonadState LastSeenEvent m, Skippable m) => Event -> m ()
