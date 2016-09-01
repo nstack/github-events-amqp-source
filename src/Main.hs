@@ -7,17 +7,14 @@ import Control.Monad.Except                 -- from: mtl
 import Control.Monad.State                  -- from: mtl
 import Control.Monad.Trans (MonadIO(..))    -- from: mtl
 import Data.Aeson.Lens                      -- from: lens-aeson
-import Data.AffineSpace ((.-.))             -- from: vector-space
 import Data.ByteString.Lazy (ByteString)    -- from: bytestring
 import Data.Foldable
 import Data.List (sortBy)
 import Data.Monoid ((<>))
-import Data.Ratio ((%))
 import Data.Text (Text, pack, unpack)       -- from: text
 import Data.Text.Lazy (fromStrict)          -- from: text
 import Data.Text.Lazy.Encoding (encodeUtf8) -- from: text
 import Data.Thyme.Time                      -- from: thyme
-import Data.VectorSpace ((^/))              -- from: vector-space
 import Text.Read (readMaybe)
 import Network.AMQP                         -- from: amqp
 import Network.Wreq (responseBody,
@@ -27,6 +24,7 @@ import Network.Wreq (responseBody,
 import qualified Network.Wreq as Wreq       -- from: wreq
 
 import Max
+import RateLimit
 import Skippable
 import Types
 
@@ -55,12 +53,11 @@ getData = do r <- liftIO $ Wreq.get "https://api.github.com/events?per_page=200"
                200 -> return r
                x   -> throwError $ StatusError x
 
-inspectRateLimit :: Wreq.Response body -> IO (Maybe NominalDiffTime)
+inspectRateLimit :: (MonadIO m, LimitMonad m) => Wreq.Response body -> m ()
 inspectRateLimit r = let foo = r ^? responseHeader "X-RateLimit-Reset" . _Integer . nomd . posx
                          bar = r ^? responseHeader "X-RateLimit-Remaining" . _Integer
-                     in sequence $ do foo >>= \a -> bar >>= \b -> return $ do
-                                        cur <- getCurrentTime
-                                        return $ (a .-. cur) ^/ (b % 1)
+                         lim = sequence $ applyRateLimit <$> foo <*> bar
+                     in maybe () (const ()) <$> lim
   where nomd = lens fromSeconds $ \_ -> truncate @Double . toSeconds
         posx = iso posixSecondsToUTCTime utcTimeToPOSIXSeconds
 
