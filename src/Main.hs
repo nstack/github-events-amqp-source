@@ -31,7 +31,7 @@ import Types
 -- https://developer.github.com/v3/#rate-limiting
 -- TODO: Auth
 -- TODO: Rate-Limiting awareness
--- TODO: sleep
+-- TODO: (minimum) sleep
 -- TODO: User-agent
 -- TODO: etag
 
