@@ -26,6 +26,7 @@ import Network.Wreq (responseBody,
                      statusCode)            -- from: wreq
 import qualified Network.Wreq as Wreq       -- from: wreq
 
+import Max
 import Skippable
 
 -- https://developer.github.com/v3/#rate-limiting
@@ -49,12 +50,6 @@ newtype Repo = Repo Text
   deriving (Eq, Show)
 data Event = Event EventId EventType Repo
   deriving (Eq, Show)
-
-newtype Max a = Max { getMax :: Maybe a } deriving (Eq, Ord, Show)
-
-instance Ord a => Monoid (Max a) where
-  mempty                = Max Nothing
-  Max a `mappend` Max b = Max $ max a b
 
 main :: IO ()
 main = putStrLn "Hello, Haskell!"
