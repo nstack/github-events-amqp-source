@@ -1,6 +1,4 @@
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
 module Main where
@@ -8,7 +6,6 @@ import Control.Lens                         -- from: lens
 import Control.Monad.Except                 -- from: mtl
 import Control.Monad.State                  -- from: mtl
 import Control.Monad.Trans (MonadIO(..))    -- from: mtl
-import Control.Monad.Trans.Free             -- from: free
 import Data.Aeson.Lens                      -- from: lens-aeson
 import Data.AffineSpace ((.-.))             -- from: vector-space
 import Data.ByteString.Lazy (ByteString)    -- from: bytestring
@@ -28,6 +25,8 @@ import Network.Wreq (responseBody,
                      responseStatus,
                      statusCode)            -- from: wreq
 import qualified Network.Wreq as Wreq       -- from: wreq
+
+import Skippable
 
 -- https://developer.github.com/v3/#rate-limiting
 -- TODO: Auth
@@ -56,15 +55,6 @@ newtype Max a = Max { getMax :: Maybe a } deriving (Eq, Ord, Show)
 instance Ord a => Monoid (Max a) where
   mempty                = Max Nothing
   Max a `mappend` Max b = Max $ max a b
-
-data SkipF f = Skip | Continue f deriving Functor
-type SkipT = FreeT SkipF
-
-class Skippable m where
-  skip :: m ()
-
-instance Monad m => Skippable (FreeT SkipF m) where
-  skip = liftF Skip
 
 main :: IO ()
 main = putStrLn "Hello, Haskell!"
@@ -105,11 +95,6 @@ trackEvents (Event i _ _) = do let cur = Max $ Just i
 printEvents :: MonadIO m => Event -> m ()
 printEvents = liftIO . print
 
-resetSkipT :: Monad m => SkipT m () -> m ()
-resetSkipT = iterT go
-  where go Skip         = return ()
-        go (Continue a) = a
-
 eventId :: Lens' Event EventId
 eventId f (Event i et r) = (\j -> Event j et r) <$> f i
 
@@ -137,9 +122,6 @@ test = runFold $ Event <$> (Fold $ key "id" . _String . readInteger) <*> blah <*
 
 readInteger :: Prism' Text Integer
 readInteger = prism' (pack . show) (readMaybe . unpack)
-
-(>>@) :: Monad m => (r -> SkipT m a) -> (r -> m b) -> r -> m ()
-a >>@ b = \r -> resetSkipT . void $ a r >> lift (b r)
 
 bindAMQPChan :: IO (Connection, Channel)
 bindAMQPChan = do conn <- openConnection "127.0.0.1" "/" "guest" "guest"
