@@ -86,10 +86,6 @@ eventType f (Event i et r) = (\s -> Event i s r) <$> f et
 repo :: Lens' Event Repo
 repo f (Event i et r) = Event i et <$> f r
 
-parseEventType :: Text -> Maybe EventType
-parseEventType "PushEvent" = Just PushEvent
-parseEventType _           = Nothing
-
 et :: Prism' Text EventType
 et = prism' (pack . show) parseEventType
 

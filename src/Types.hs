@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Types where
 import Data.Text (Text) -- from: text
 
@@ -18,3 +19,7 @@ newtype Repo = Repo Text
 
 data Event = Event EventId EventType Repo
   deriving (Eq, Show)
+
+parseEventType :: Text -> Maybe EventType
+parseEventType "PushEvent" = Just PushEvent
+parseEventType _           = Nothing
