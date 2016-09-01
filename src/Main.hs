@@ -1,12 +1,14 @@
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 import Control.Lens                   -- from: lens
 import Control.Monad.Except           -- from: mtl
+import Control.Monad.Trans.Free       -- from: free
 import Control.Monad.Reader           -- from: mtl
 import Control.Monad.State            -- from: mtl
 import Control.Monad.Trans            -- from: mtl
-import Control.Monad.Trans.Maybe      -- from: transformers
 import Data.Aeson                     -- from: aeson
 import Data.Aeson.Lens                -- from: lens-aeson
 import Data.Foldable
@@ -48,17 +50,20 @@ instance Ord a => Monoid (Max a) where
   mempty                = Max Nothing
   Max a `mappend` Max b = Max $ max a b
 
+data SkipF f = Skip | Continue f deriving Functor
+type SkipT = FreeT SkipF
+
 class Skippable m where
   skip :: m ()
 
-instance Applicative m => Skippable (MaybeT m) where
-  skip = MaybeT (pure Nothing)
+instance Monad m => Skippable (FreeT SkipF m) where
+  skip = liftF Skip
 
 main :: IO ()
 main = putStrLn "Hello, Haskell!"
 
 run :: MonadIO m => (Event -> m ()) -> m ()
-run f = void . flip runStateT mempty . forever . logErrors $ getData >>= flip getRepos (lift . (trackEvents >>@?! liftTracking f))
+run f = void . flip runStateT mempty . forever . logErrors $ getData >>= flip getRepos (lift . (trackEvents >>@ liftTracking f))
   where liftTracking :: Monad m => (r -> m a) -> r -> StateT LastSeenEvent m a
         liftTracking f r = lift $ f r
 
@@ -87,8 +92,10 @@ trackEvents (Event i _ _) = do let cur = Max $ Just i
 printEvents :: MonadIO m => Event -> m ()
 printEvents = liftIO . print
 
-resetSkip :: (Functor m) => MaybeT m () -> m ()
-resetSkip = fmap (maybe () id) . runMaybeT
+resetSkipT :: Monad m => SkipT m () -> m ()
+resetSkipT = iterT go
+  where go Skip         = return ()
+        go (Continue a) = a
 
 eventId :: Lens' Event EventId
 eventId f (Event i et r) = (\j -> Event j et r) <$> f i
@@ -118,17 +125,5 @@ test = runFold $ Event <$> (Fold $ key "id" . _String . readInteger) <*> blah <*
 readInteger :: Prism' Text Integer
 readInteger = prism' (pack . show) (readMaybe . unpack)
 
-(>>@) :: Monad m => (r -> m a) -> (r -> m b) -> r -> m b
-a >>@ b = runReaderT $ ReaderT a >> ReaderT b
-
-(>>@?) :: Monad m => (r -> MaybeT m a) -> (r -> m b) -> r -> MaybeT m ()
-a >>@? b = \r -> MaybeT $ do x <- runMaybeT (a r)
-                             case x of
-                               Nothing -> return Nothing
-                               Just  _ -> Just <$> void (b r)
-
-(>>@?!) :: Monad m => (r -> MaybeT m a) -> (r -> m b) -> r -> m ()
-a >>@?! b = \r -> do x <- runMaybeT (a r)
-                     case x of
-                       Nothing -> return ()
-                       Just  _ -> void $ b r
+(>>@) :: Monad m => (r -> SkipT m a) -> (r -> m b) -> r -> m ()
+a >>@ b = \r -> resetSkipT . void $ a r >> lift (b r)
