@@ -28,6 +28,7 @@ import qualified Network.Wreq as Wreq       -- from: wreq
 
 import Max
 import Skippable
+import Types
 
 -- https://developer.github.com/v3/#rate-limiting
 -- TODO: Auth
@@ -36,20 +37,6 @@ import Skippable
 -- TODO: User-agent
 -- TODO: etag
 
-type EventId = Integer
-type SleepTime = Int
-type LastSeenEvent = Max EventId
-
-data PollError = StatusError Int
-  deriving (Eq, Show)
-
-data EventType = PushEvent
-  deriving (Eq, Show)
-
-newtype Repo = Repo Text
-  deriving (Eq, Show)
-data Event = Event EventId EventType Repo
-  deriving (Eq, Show)
 
 main :: IO ()
 main = putStrLn "Hello, Haskell!"
