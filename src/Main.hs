@@ -3,24 +3,27 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
-import Control.Lens                   -- from: lens
-import Control.Monad.Except           -- from: mtl
-import Control.Monad.Trans.Free       -- from: free
-import Control.Monad.Reader           -- from: mtl
-import Control.Monad.State            -- from: mtl
-import Control.Monad.Trans            -- from: mtl
-import Data.Aeson                     -- from: aeson
-import Data.Aeson.Lens                -- from: lens-aeson
+import Control.Lens                         -- from: lens
+import Control.Monad.Except                 -- from: mtl
+import Control.Monad.Trans.Free             -- from: free
+import Control.Monad.Reader                 -- from: mtl
+import Control.Monad.State                  -- from: mtl
+import Control.Monad.Trans                  -- from: mtl
+import Data.Aeson                           -- from: aeson
+import Data.Aeson.Lens                      -- from: lens-aeson
 import Data.Foldable
 import Data.List
 import Data.Monoid
-import Data.Text (Text, pack, unpack) -- from: text
-import qualified Data.Text as T       -- from: text
+import Data.Text (Text, pack, unpack)       -- from: text
+import Data.Text.Lazy (fromStrict)          -- from: text
+import Data.Text.Lazy.Encoding (encodeUtf8) -- from: text
+import qualified Data.Text as T             -- from: text
 import Text.Read (readMaybe)
+import Network.AMQP                         -- from: amqp
 import Network.Wreq (responseBody,
                      responseStatus,
-                     statusCode)      -- from: wreq
-import qualified Network.Wreq as Wreq -- from: wreq
+                     statusCode)            -- from: wreq
+import qualified Network.Wreq as Wreq       -- from: wreq
 
 -- https://developer.github.com/v3/#rate-limiting
 -- TODO: Auth
@@ -127,3 +130,14 @@ readInteger = prism' (pack . show) (readMaybe . unpack)
 
 (>>@) :: Monad m => (r -> SkipT m a) -> (r -> m b) -> r -> m ()
 a >>@ b = \r -> resetSkipT . void $ a r >> lift (b r)
+
+bindAMQPChan :: IO (Connection, Channel)
+bindAMQPChan = do conn <- openConnection "127.0.0.1" "/" "guest" "guest"
+                  chan <- openChannel conn
+                  declareExchange chan newExchange { exchangeName = "github-events",
+                                                     exchangeType = "topic" }
+                  return (conn, chan)
+
+publishEvent :: Channel -> Event -> IO ()
+publishEvent chan evt = void $ publishMsg chan "github-events" (evt ^. eventType . re et)
+  newMsg { msgBody = encodeUtf8 (fromStrict $ evt ^. repo . coerced) }
