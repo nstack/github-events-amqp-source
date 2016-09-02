@@ -107,4 +107,4 @@ bindAMQPChan s = do conn <- openConnection (s ^. amqpHost . unpacked)
 
 publishEvent :: Settings -> Channel -> Event -> IO ()
 publishEvent s chan evt = void $ publishMsg chan (s ^. amqpExchange) (evt ^. eventType . re et)
-  newMsg { msgBody = encodeUtf8 (fromStrict $ evt ^. repo . coerced) }
+  newMsg { msgBody = "https://github.com/" <> encodeUtf8 (fromStrict $ evt ^. repo . coerced) }
