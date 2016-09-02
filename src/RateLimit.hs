@@ -40,8 +40,10 @@ instance {-# OVERLAPPABLE #-} (LimitMonad m, Monad m, MonadTrans t) => LimitMona
 
 applyRateLimit :: (MonadIO m, LimitMonad m) => Reset -> Remaining -> m ()
 applyRateLimit reset remain = do cur <- liftIO getCurrentTime
-                                 limitFor $ let v = (reset .-. cur)
-                                            in if v < 1 then v else v ^/ (remain % 1)
+                                 vr <- if remain < 1
+                                       then liftIO (putStrLn "No calls remaining") >> return remain
+                                       else return remain
+                                 limitFor $ (reset .-. cur) ^/ (vr % 1)
 
 foreverRateLimitT :: MonadIO m => RateLimitT m a -> MinimumSleep -> m r
 foreverRateLimitT m ms = forever $ runRateLimitT m ms delay
