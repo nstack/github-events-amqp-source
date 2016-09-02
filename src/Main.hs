@@ -4,18 +4,22 @@
 module Main where
 import Control.Lens                         -- from: lens
 import Control.Monad.Except                 -- from: mtl
+import Control.Monad.Reader                 -- from: mtl
 import Control.Monad.Trans (MonadIO(..))    -- from: mtl
 import Data.Aeson.Lens                      -- from: lens-aeson
 import Data.ByteString.Lazy (ByteString)    -- from: bytestring
 import Data.Foldable
 import Data.List (sortBy)
+import Data.Text (Text, pack)               -- from: text
 import Data.Text.Lazy (fromStrict)          -- from: text
 import Data.Text.Lazy.Encoding (encodeUtf8) -- from: text
+import Data.Text.Strict.Lens (utf8)         -- from: lens
 import Network.AMQP                         -- from: amqp
 import Network.Wreq (responseBody,
                      responseStatus,
                      statusCode)            -- from: wreq
 import qualified Network.Wreq as Wreq       -- from: wreq
+import Options.Applicative                  -- from: optparse-applicative
 
 import RateLimit
 import SeenEvents
@@ -23,24 +27,48 @@ import Skippable
 import Types
 
 -- https://developer.github.com/v3/#rate-limiting
--- TODO: Auth
 -- TODO: User-agent
 -- TODO: etag
 
+data Settings = Settings { _authUser :: Maybe Text,
+                           _authToken :: Maybe Text }
+  deriving (Eq, Show)
+
+defaultSettings :: Settings
+defaultSettings = Settings Nothing Nothing
+
+authUser :: Lens' Settings (Maybe Text)
+authUser f s = (\t -> s { _authUser = t }) <$> f (_authUser s)
+
+authToken :: Lens' Settings (Maybe Text)
+authToken f s = (\t -> s { _authToken = t }) <$> f (_authToken s)
+
+foo :: Parser Settings
+foo = Settings <$> optional (textOption (long "auth-user" <> metavar "USERNAME"))
+               <*> optional (textOption (long "auth-token" <> metavar "AUTH_TOKEN"))
+  where textOption = fmap pack . strOption
+
+bar :: ParserInfo Settings
+bar = info (helper <*> foo) fullDesc
+
+settingsToOpts :: Settings -> Wreq.Options
+settingsToOpts s = Wreq.defaults & Wreq.auth .~ (Wreq.basicAuth <$> s ^? authUser . _Just. re utf8
+                                                                <*> s ^? authToken . _Just . re utf8)
 
 main :: IO ()
-main = putStrLn "Hello, Haskell!"
+main = execParser bar >>= flip run printEvents . settingsToOpts
 
-run :: MonadIO m => (Event -> m a) -> m ()
-run f = runEvents $ getData >>= \r -> (getEvents r handlers) >> inspectRateLimit r
-  where handlers = trackEvents >>@ lift . lift . lift . f
-        runEvents = runSeenEventsT . flip foreverRateLimitT 1000000 . logErrors
+run :: MonadIO m => Wreq.Options -> (Event -> m a) -> m ()
+run opts f = runEvents $ getData >>= \r -> (getEvents r handlers) >> inspectRateLimit r
+  where handlers = trackEvents >>@ lift . lift . lift . lift . f
+        runEvents = runSeenEventsT . flip foreverRateLimitT 1000000 . logErrors . flip runReaderT opts
 
 logErrors :: (Show r, MonadIO m) => ExceptT r m a -> m ()
 logErrors m = runExceptT m >>= either (liftIO . print) (void . return)
 
-getData :: (MonadError PollError m, MonadIO m) => m (Wreq.Response ByteString)
-getData = do r <- liftIO $ Wreq.get "https://api.github.com/events?per_page=200"
+getData :: (MonadReader Wreq.Options m, MonadError PollError m, MonadIO m) => m (Wreq.Response ByteString)
+getData = do opts <- ask
+             r <- liftIO $ Wreq.getWith opts "https://api.github.com/events?per_page=200"
              case r ^. responseStatus . statusCode of
                200 -> return r
                x   -> throwError $ StatusError x
