@@ -46,7 +46,7 @@ getData = do r <- liftIO $ Wreq.get "https://api.github.com/events?per_page=200"
                x   -> throwError $ StatusError x
 
 getEvents :: (AsValue body, Applicative m) => Wreq.Response body -> (Event -> m ()) -> m ()
-getEvents r k = traverse_ k . sortBy sortf $ r ^.. responseBody . values . test
+getEvents r k = traverse_ k . sortBy sortf $ r ^.. responseBody . values . toMaster . isOrg . test
   where sortf = curry $ uncurry compare . (view $ eventId `alongside` eventId)
 
 printEvents :: MonadIO m => Event -> m ()
@@ -60,6 +60,12 @@ blah = Fold $ key "type" . _String . et
 
 test :: AsValue s => Fold s Event
 test = runFold $ Event <$> (Fold $ key "id" . _String . _Integer) <*> blah <*> repo'
+
+toMaster :: (AsValue s, Choice p, Applicative f) => Optic' p f s s
+toMaster = filtered . has $ key "payload" . key "ref" . filtered (== "refs/heads/master")
+
+isOrg :: (AsValue s, Choice p, Applicative f) => Optic' p f s s
+isOrg = filtered . has $ key "org"
 
 bindAMQPChan :: IO (Connection, Channel)
 bindAMQPChan = do conn <- openConnection "127.0.0.1" "/" "guest" "guest"
