@@ -29,12 +29,13 @@ import Types
 -- https://developer.github.com/v3/#rate-limiting
 -- TODO: etag
 
-data Settings = Settings { _authUser :: Maybe Text,
-                           _authToken :: Maybe Text }
+data Settings = Settings { _authUser  :: Maybe Text,
+                           _authToken :: Maybe Text,
+                           _minSleep  :: Int }
   deriving (Eq, Show)
 
 defaultSettings :: Settings
-defaultSettings = Settings Nothing Nothing
+defaultSettings = Settings Nothing Nothing 1000
 
 authUser :: Lens' Settings (Maybe Text)
 authUser f s = (\t -> s { _authUser = t }) <$> f (_authUser s)
@@ -42,9 +43,15 @@ authUser f s = (\t -> s { _authUser = t }) <$> f (_authUser s)
 authToken :: Lens' Settings (Maybe Text)
 authToken f s = (\t -> s { _authToken = t }) <$> f (_authToken s)
 
+minSleep :: Lens' Settings Int
+minSleep f s = (\t -> s { _minSleep = t }) <$> f (_minSleep s)
+
 foo :: Parser Settings
 foo = Settings <$> optional (textOption (long "auth-user" <> metavar "USERNAME"))
                <*> optional (textOption (long "auth-token" <> metavar "AUTH_TOKEN"))
+               <*> option auto (long "minimum-sleep"
+                             <> metavar "MILLISECONDS"
+                             <> value (defaultSettings ^. minSleep))
   where textOption = fmap pack . strOption
 
 bar :: ParserInfo Settings
@@ -57,18 +64,19 @@ settingsToOpts s = Wreq.defaults & Wreq.auth .~ (Wreq.basicAuth <$> s ^? authUse
                                                             <|> ["nstack:github-events-amqp-source"])
 
 main :: IO ()
-main = execParser bar >>= flip run printEvents . settingsToOpts
+main = execParser bar >>= \s -> runReaderT (run printEvents) s
 
-run :: MonadIO m => Wreq.Options -> (Event -> m a) -> m ()
-run opts f = runEvents $ getData >>= \r -> (getEvents r handlers) >> inspectRateLimit r
-  where handlers = trackEvents >>@ lift . lift . lift . lift . f
-        runEvents = runSeenEventsT . flip foreverRateLimitT 1000000 . logErrors . flip runReaderT opts
+run :: (MonadReader Settings m, MonadIO m) => (Event -> m a) -> m ()
+run f = runEvents $ getData >>= \r -> (getEvents r handlers) >> inspectRateLimit r
+  where handlers = trackEvents >>@ lift . lift . lift . f
+        runEvents = runSeenEventsT . runRL . logErrors
+        runRL m = view minSleep >>= \s -> foreverRateLimitT m $ s * 1000
 
 logErrors :: (Show r, MonadIO m) => ExceptT r m a -> m ()
 logErrors m = runExceptT m >>= either (liftIO . print) (void . return)
 
-getData :: (MonadReader Wreq.Options m, MonadError PollError m, MonadIO m) => m (Wreq.Response ByteString)
-getData = do opts <- ask
+getData :: (MonadReader Settings m, MonadError PollError m, MonadIO m) => m (Wreq.Response ByteString)
+getData = do opts <- settingsToOpts <$> ask
              r <- liftIO $ Wreq.getWith opts "https://api.github.com/events?per_page=200"
              case r ^. responseStatus . statusCode of
                200 -> return r

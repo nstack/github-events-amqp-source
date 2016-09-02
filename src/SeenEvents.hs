@@ -1,7 +1,11 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE UndecidableInstances #-}
 module SeenEvents (MonadSeenEvents(..), runSeenEventsT, trackEvents) where
-import Control.Monad.State -- from: mtl
+import Control.Monad.Reader -- from: mtl
+import Control.Monad.State  -- from: mtl
 import Data.Monoid ((<>))
 
 import Max
@@ -18,6 +22,8 @@ class MonadSeenEvents m where
 
 newtype SeenEventsT m a = SeenEventsT { runSeenEventsT' :: StateT LastSeenEvent m a }
   deriving (Functor, Applicative, Monad, MonadTrans, MonadIO)
+
+deriving instance MonadReader r m => MonadReader r (SeenEventsT m)
 
 runSeenEventsT :: Monad m => SeenEventsT m a -> m a
 runSeenEventsT = flip evalStateT mempty . runSeenEventsT'

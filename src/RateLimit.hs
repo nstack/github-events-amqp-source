@@ -1,12 +1,16 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE UndecidableInstances #-}
 module RateLimit (Reset, Remaining, Microseconds, MinimumSleep,
                   LimitMonad(..), runRateLimitT,
                   applyRateLimit, foreverRateLimitT, inspectRateLimit) where
 import Control.Concurrent (threadDelay)
 import Control.Lens ((^?), lens, iso) -- from: lens
+import Control.Monad.Reader           -- from: mtl
 import Control.Monad.State            -- from: mtl
 import Data.Aeson.Lens (_Integer)     -- from: lens-aeson
 import Data.AffineSpace ((.-.))       -- from: vector-space
@@ -28,9 +32,11 @@ class LimitMonad m where
 newtype RateLimitT m a = RateLimitT { runRateLimitT' :: StateT NominalDiffTime m a }
   deriving (Functor, Applicative, Monad, MonadTrans, MonadIO)
 
+deriving instance MonadReader r m => MonadReader r (RateLimitT m)
+
 runRateLimitT :: Monad m => RateLimitT m a -> MinimumSleep -> (Microseconds -> a -> m r) -> m r
 runRateLimitT m minsleep f = do (a, s) <- runStateT (runRateLimitT' m) $ fromSeconds minsleep
-                                f (truncate @Double . (* 1000000) . toSeconds $ s) a
+                                f (max minsleep $ truncate @Double . (* 1000000) . toSeconds $ s) a
 
 instance {-# OVERLAPPING  #-} Monad m => LimitMonad (RateLimitT m) where
   limitFor a = RateLimitT $ put a
