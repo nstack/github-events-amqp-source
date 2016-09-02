@@ -55,7 +55,10 @@ bar :: ParserInfo Settings
 bar = info (helper <*> foo) fullDesc
 
 main :: IO ()
-main = execParser bar >>= \s -> runReaderT (run printEvents) s
+main = execParser bar >>= \s -> do (_, chan) <- bindAMQPChan s
+                                   let handler = runReaderT $ (ReaderT . fmap liftIO $ publishEvent s chan)
+                                                            >> ReaderT printEvents
+                                   runReaderT (run handler) s
 
 run :: (MonadReader Settings m, MonadIO m) => (Event -> m a) -> m ()
 run f = runEvents $ getData >>= \r -> (getEvents r handlers) >> inspectRateLimit r
@@ -106,5 +109,5 @@ bindAMQPChan s = do conn <- openConnection (s ^. amqpHost . unpacked)
                     return (conn, chan)
 
 publishEvent :: Settings -> Channel -> Event -> IO ()
-publishEvent chan evt = void $ publishMsg chan (s ^. amqpExchange) (evt ^. eventType . re et)
+publishEvent s chan evt = void $ publishMsg chan (s ^. amqpExchange) (evt ^. eventType . re et)
   newMsg { msgBody = encodeUtf8 (fromStrict $ evt ^. repo . coerced) }
