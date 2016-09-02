@@ -43,6 +43,7 @@ applyRateLimit reset remain = do cur <- liftIO getCurrentTime
                                  vr <- if remain < 1
                                        then liftIO (putStrLn "No calls remaining") >> return remain
                                        else return remain
+                                 liftIO . print $ (reset .-. cur) ^/ (vr % 1)
                                  limitFor $ (reset .-. cur) ^/ (vr % 1)
 
 foreverRateLimitT :: MonadIO m => RateLimitT m a -> MinimumSleep -> m r

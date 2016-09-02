@@ -24,8 +24,6 @@ import Types
 
 -- https://developer.github.com/v3/#rate-limiting
 -- TODO: Auth
--- TODO: Rate-Limiting awareness
--- TODO: (minimum) sleep
 -- TODO: User-agent
 -- TODO: etag
 
@@ -33,18 +31,10 @@ import Types
 main :: IO ()
 main = putStrLn "Hello, Haskell!"
 
---run :: MonadIO m => (Event -> m ()) -> m ()
---run f = void . runSeenEventsT . runEvents $ getData >>= runReaderT respHandlers
---  where respHandlers = (ReaderT $ flip getRepos eventHandlers) >> ReaderT inspectRateLimit
---        eventHandlers = \_ -> return () --trackEvents
---        runEvents = flip foreverRateLimitT 1000000 . logErrors
-
---run :: MonadIO m => (Event -> m ()) -> m ()
---run f = void . flip runStateT mempty . logErrors $ getData -- >>= respHandlers --flip getRepos (lift . eventHandlers)
---  where liftTracking :: Monad m => (r -> m a) -> r -> StateT LastSeenEvent m a
---        liftTracking f r = lift $ f r
---        respHandlers = flip getRepos (eventHandlers)
---        eventHandlers = trackEvents >>@ f
+run :: MonadIO m => (Event -> m a) -> m ()
+run f = runEvents $ getData >>= \r -> (getEvents r handlers) >> inspectRateLimit r
+  where handlers = trackEvents >>@ lift . lift . lift . f
+        runEvents = runSeenEventsT . flip foreverRateLimitT 1000000 . logErrors
 
 logErrors :: (Show r, MonadIO m) => ExceptT r m a -> m ()
 logErrors m = runExceptT m >>= either (liftIO . print) (void . return)
@@ -55,8 +45,8 @@ getData = do r <- liftIO $ Wreq.get "https://api.github.com/events?per_page=200"
                200 -> return r
                x   -> throwError $ StatusError x
 
-getRepos :: (AsValue body, Applicative m) => Wreq.Response body -> (Event -> m ()) -> m ()
-getRepos r k = traverse_ k . sortBy sortf $ r ^.. responseBody . values . test
+getEvents :: (AsValue body, Applicative m) => Wreq.Response body -> (Event -> m ()) -> m ()
+getEvents r k = traverse_ k . sortBy sortf $ r ^.. responseBody . values . test
   where sortf = curry $ uncurry compare . (view $ eventId `alongside` eventId)
 
 printEvents :: MonadIO m => Event -> m ()
@@ -69,7 +59,7 @@ blah :: AsValue s => ReifiedFold s EventType
 blah = Fold $ key "type" . _String . et
 
 test :: AsValue s => Fold s Event
-test = runFold $ Event <$> (Fold $ key "id" . _Integer) <*> blah <*> repo'
+test = runFold $ Event <$> (Fold $ key "id" . _String . _Integer) <*> blah <*> repo'
 
 bindAMQPChan :: IO (Connection, Channel)
 bindAMQPChan = do conn <- openConnection "127.0.0.1" "/" "guest" "guest"
