@@ -10,6 +10,7 @@ import Data.Aeson.Lens                      -- from: lens-aeson
 import Data.ByteString.Lazy (ByteString)    -- from: bytestring
 import Data.Foldable
 import Data.List (sortBy)
+import Data.Text (pack)                     -- from: text
 import Data.Text.Lazy (fromStrict)          -- from: text
 import Data.Text.Lazy.Encoding (encodeUtf8) -- from: text
 import Data.Text.Strict.Lens (unpacked)     -- from: lens
@@ -30,26 +31,22 @@ import Types
 -- TODO: etag
 
 foo :: Parser Settings
-foo = Settings <$> option auto (long "auth-user" <> metavar "USERNAME")
-               <*> option auto (long "auth-token" <> metavar "AUTH_TOKEN")
+foo = Settings <$> optional (textOption (long "auth-user" <> metavar "USERNAME"))
+               <*> optional (textOption (long "auth-token" <> metavar "AUTH_TOKEN"))
                <*> option auto (long "minimum-sleep"
                              <> metavar "MILLISECONDS"
                              <> value (defaultSettings ^. minSleep))
-               <*> option auto (long "amqp-user"
-                             <> metavar "USERNAME"
-                             <> value (defaultSettings ^. amqpUser))
-               <*> option auto (long "amqp-password"
-                             <> metavar "PASSWORD"
-                             <> value (defaultSettings ^. amqpPassword))
-               <*> option auto (long "amqp-host"
-                             <> metavar "HOST"
-                             <> value (defaultSettings ^. amqpHost))
-               <*> option auto (long "amqp-virtualhost"
-                             <> metavar "VIRTUALHOST"
-                             <> value (defaultSettings ^. amqpVirtualHost))
-               <*> option auto (long "amqp-exchange"
-                             <> metavar "EXCHANGE"
-                             <> value (defaultSettings ^. amqpExchange))
+               <*> (textOption (long "amqp-user"
+                             <> metavar "USERNAME") <|> pure (defaultSettings ^. amqpUser))
+               <*> (textOption (long "amqp-password"
+                             <> metavar "PASSWORD") <|> pure (defaultSettings ^. amqpPassword))
+               <*> (textOption (long "amqp-host"
+                             <> metavar "HOST") <|> pure (defaultSettings ^. amqpHost))
+               <*> (textOption (long "amqp-virtualhost"
+                             <> metavar "VIRTUALHOST") <|> pure (defaultSettings ^. amqpVirtualHost))
+               <*> (textOption (long "amqp-exchange"
+                             <> metavar "EXCHANGE") <|> pure (defaultSettings ^. amqpExchange))
+  where textOption = fmap pack . strOption
 
 bar :: ParserInfo Settings
 bar = info (helper <*> foo) fullDesc
@@ -100,7 +97,7 @@ isOrg = filtered . has $ key "org"
 
 bindAMQPChan :: Settings -> IO (Connection, Channel)
 bindAMQPChan s = do conn <- openConnection (s ^. amqpHost . unpacked)
-                                           (s ^. amqpPassword)
+                                           (s ^. amqpVirtualHost)
                                            (s ^. amqpUser)
                                            (s ^. amqpPassword)
                     chan <- openChannel conn
