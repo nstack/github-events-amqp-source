@@ -10,11 +10,9 @@ import Data.Aeson.Lens                      -- from: lens-aeson
 import Data.ByteString.Lazy (ByteString)    -- from: bytestring
 import Data.Foldable
 import Data.List (sortBy)
-import Data.Text (Text)                     -- from: text
 import Data.Text.Lazy (fromStrict)          -- from: text
 import Data.Text.Lazy.Encoding (encodeUtf8) -- from: text
-import Data.Text.Strict.Lens (utf8,
-                              unpacked)     -- from: lens
+import Data.Text.Strict.Lens (unpacked)     -- from: lens
 import Network.AMQP                         -- from: amqp
 import Network.Wreq (responseBody,
                      responseStatus,
@@ -24,48 +22,12 @@ import Options.Applicative                  -- from: optparse-applicative
 
 import RateLimit
 import SeenEvents
+import Settings
 import Skippable
 import Types
 
 -- https://developer.github.com/v3/#rate-limiting
 -- TODO: etag
-
-data Settings = Settings { _authUser        :: Maybe Text,
-                           _authToken       :: Maybe Text,
-                           _minSleep        :: Int,
-                           _amqpUser        :: Text,
-                           _amqpPassword    :: Text,
-                           _amqpHost        :: Text,
-                           _amqpVirtualHost :: Text,
-                           _amqpExchange    :: Text}
-  deriving (Eq, Show)
-
-defaultSettings :: Settings
-defaultSettings = Settings Nothing Nothing 1000 "guest" "guest" "127.0.0.1" "/" "github-events"
-
-authUser :: Lens' Settings (Maybe Text)
-authUser f s = (\t -> s { _authUser = t }) <$> f (_authUser s)
-
-authToken :: Lens' Settings (Maybe Text)
-authToken f s = (\t -> s { _authToken = t }) <$> f (_authToken s)
-
-minSleep :: Lens' Settings Int
-minSleep f s = (\t -> s { _minSleep = t }) <$> f (_minSleep s)
-
-amqpUser :: Lens' Settings Text
-amqpUser f s = (\t -> s { _amqpUser = t }) <$> f (_amqpUser s)
-
-amqpPassword :: Lens' Settings Text
-amqpPassword f s = (\t -> s { _amqpPassword = t }) <$> f (_amqpPassword s)
-
-amqpHost :: Lens' Settings Text
-amqpHost f s = (\t -> s { _amqpHost = t }) <$> f (_amqpHost s)
-
-amqpVirtualHost :: Lens' Settings Text
-amqpVirtualHost f s = (\t -> s { _amqpVirtualHost = t }) <$> f (_amqpVirtualHost s)
-
-amqpExchange :: Lens' Settings Text
-amqpExchange f s = (\t -> s { _amqpExchange = t }) <$> f (_amqpExchange s)
 
 foo :: Parser Settings
 foo = Settings <$> option auto (long "auth-user" <> metavar "USERNAME")
@@ -91,12 +53,6 @@ foo = Settings <$> option auto (long "auth-user" <> metavar "USERNAME")
 
 bar :: ParserInfo Settings
 bar = info (helper <*> foo) fullDesc
-
-settingsToOpts :: Settings -> Wreq.Options
-settingsToOpts s = Wreq.defaults & Wreq.auth .~ (Wreq.basicAuth <$> s ^? authUser . _Just . re utf8
-                                                                <*> s ^? authToken . _Just . re utf8)
-                                 & Wreq.header "User-Agent" .~ ((s ^.. authUser . _Just . re utf8)
-                                                            <|> ["nstack:github-events-amqp-source"])
 
 main :: IO ()
 main = execParser bar >>= \s -> runReaderT (run printEvents) s
