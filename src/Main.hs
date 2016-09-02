@@ -27,7 +27,6 @@ import Skippable
 import Types
 
 -- https://developer.github.com/v3/#rate-limiting
--- TODO: User-agent
 -- TODO: etag
 
 data Settings = Settings { _authUser :: Maybe Text,
@@ -52,8 +51,10 @@ bar :: ParserInfo Settings
 bar = info (helper <*> foo) fullDesc
 
 settingsToOpts :: Settings -> Wreq.Options
-settingsToOpts s = Wreq.defaults & Wreq.auth .~ (Wreq.basicAuth <$> s ^? authUser . _Just. re utf8
+settingsToOpts s = Wreq.defaults & Wreq.auth .~ (Wreq.basicAuth <$> s ^? authUser . _Just . re utf8
                                                                 <*> s ^? authToken . _Just . re utf8)
+                                 & Wreq.header "User-Agent" .~ ((s ^.. authUser . _Just . re utf8)
+                                                            <|> ["nstack:github-events-amqp-source"])
 
 main :: IO ()
 main = execParser bar >>= flip run printEvents . settingsToOpts
