@@ -21,3 +21,4 @@ resetSkipT = iterT go
 
 (>>@) :: Monad m => (r -> SkipT m a) -> (r -> m b) -> r -> m ()
 a >>@ b = \r -> resetSkipT . void $ a r >> lift (b r)
+infixl 1 >>@
