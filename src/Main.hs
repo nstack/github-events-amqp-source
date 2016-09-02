@@ -46,6 +46,9 @@ foo = Settings <$> optional (textOption (long "auth-user" <> metavar "USERNAME")
                              <> metavar "VIRTUALHOST") <|> pure (defaultSettings ^. amqpVirtualHost))
                <*> (textOption (long "amqp-exchange"
                              <> metavar "EXCHANGE") <|> pure (defaultSettings ^. amqpExchange))
+               <*> option auto (long "events-per-page"
+                             <> metavar "NUM_PAGES"
+                             <> value (defaultSettings ^. eventsPerPage))
   where textOption = fmap pack . strOption
 
 bar :: ParserInfo Settings
@@ -67,8 +70,9 @@ logErrors :: (Show r, MonadIO m) => ExceptT r m a -> m ()
 logErrors m = runExceptT m >>= either (liftIO . print) (void . return)
 
 getData :: (MonadReader Settings m, MonadError PollError m, MonadIO m) => m (Wreq.Response ByteString)
-getData = do opts <- settingsToOpts <$> ask
-             r <- liftIO $ Wreq.getWith opts "https://api.github.com/events?per_page=200"
+getData = do settings <- ask
+             let url = "https://api.github.com/events?per_page=" <> show (settings ^. eventsPerPage)
+             r <- liftIO $ Wreq.getWith (settingsToOpts settings) url
              case r ^. responseStatus . statusCode of
                200 -> return r
                x   -> throwError $ StatusError x

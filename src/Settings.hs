@@ -13,11 +13,12 @@ data Settings = Settings { _authUser        :: Maybe Text,
                            _amqpPassword    :: Text,
                            _amqpHost        :: Text,
                            _amqpVirtualHost :: Text,
-                           _amqpExchange    :: Text}
+                           _amqpExchange    :: Text,
+                           _eventsPerPage   :: Int}
   deriving (Eq, Show)
 
 defaultSettings :: Settings
-defaultSettings = Settings Nothing Nothing 1000 "guest" "guest" "127.0.0.1" "/" "github-events"
+defaultSettings = Settings Nothing Nothing 1000 "guest" "guest" "127.0.0.1" "/" "github-events" 200
 
 authUser :: Lens' Settings (Maybe Text)
 authUser f s = (\t -> s { _authUser = t }) <$> f (_authUser s)
@@ -42,6 +43,9 @@ amqpVirtualHost f s = (\t -> s { _amqpVirtualHost = t }) <$> f (_amqpVirtualHost
 
 amqpExchange :: Lens' Settings Text
 amqpExchange f s = (\t -> s { _amqpExchange = t }) <$> f (_amqpExchange s)
+
+eventsPerPage :: Lens' Settings Int
+eventsPerPage f s = (\t -> s { _eventsPerPage = t }) <$> f (_eventsPerPage s)
 
 settingsToOpts :: Settings -> Wreq.Options
 settingsToOpts s = Wreq.defaults & Wreq.auth .~ (Wreq.basicAuth <$> s ^? authUser . _Just . re utf8
