@@ -48,7 +48,7 @@ flags: {}
 extra-package-dbs: []
 
 # Control whether we use the GHC we find on the path
-# system-ghc: true
+system-ghc: false
 # 
 # Require a specific version of stack, using version ranges
 # require-stack-version: -any # Default
@@ -64,3 +64,4 @@ extra-package-dbs: []
 # 
 # Allow a newer minor version of GHC than the snapshot specifies
 # compiler-check: newer-minor
+
