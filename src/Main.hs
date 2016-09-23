@@ -30,35 +30,35 @@ import Types
 -- https://developer.github.com/v3/#rate-limiting
 -- TODO: etag
 
-foo :: Parser Settings
-foo = Settings <$> optional (textOption (long "auth-user" <> metavar "USERNAME"))
-               <*> optional (textOption (long "auth-token" <> metavar "AUTH_TOKEN"))
-               <*> option auto (long "minimum-sleep"
-                             <> metavar "MILLISECONDS"
-                             <> value (defaultSettings ^. minSleep))
-               <*> (textOption (long "amqp-user"
-                             <> metavar "USERNAME") <|> pure (defaultSettings ^. amqpUser))
-               <*> (textOption (long "amqp-password"
-                             <> metavar "PASSWORD") <|> pure (defaultSettings ^. amqpPassword))
-               <*> (textOption (long "amqp-host"
-                             <> metavar "HOST") <|> pure (defaultSettings ^. amqpHost))
-               <*> (textOption (long "amqp-virtualhost"
-                             <> metavar "VIRTUALHOST") <|> pure (defaultSettings ^. amqpVirtualHost))
-               <*> (textOption (long "amqp-exchange"
-                             <> metavar "EXCHANGE") <|> pure (defaultSettings ^. amqpExchange))
-               <*> option auto (long "events-per-page"
-                             <> metavar "NUM_PAGES"
-                             <> value (defaultSettings ^. eventsPerPage))
+cmdParser :: Parser Settings
+cmdParser = Settings <$> optional (textOption (long "auth-user" <> metavar "USERNAME"))
+                     <*> optional (textOption (long "auth-token" <> metavar "AUTH_TOKEN"))
+                     <*> option auto (long "minimum-sleep"
+                                   <> metavar "MILLISECONDS"
+                                   <> value (defaultSettings ^. minSleep))
+                     <*> (textOption (long "amqp-user"
+                                   <> metavar "USERNAME") <|> pure (defaultSettings ^. amqpUser))
+                     <*> (textOption (long "amqp-password"
+                                   <> metavar "PASSWORD") <|> pure (defaultSettings ^. amqpPassword))
+                     <*> (textOption (long "amqp-host"
+                                   <> metavar "HOST") <|> pure (defaultSettings ^. amqpHost))
+                     <*> (textOption (long "amqp-virtualhost"
+                                   <> metavar "VIRTUALHOST") <|> pure (defaultSettings ^. amqpVirtualHost))
+                     <*> (textOption (long "amqp-exchange"
+                                   <> metavar "EXCHANGE") <|> pure (defaultSettings ^. amqpExchange))
+                     <*> option auto (long "events-per-page"
+                                   <> metavar "NUM_PAGES"
+                                   <> value (defaultSettings ^. eventsPerPage))
   where textOption = fmap pack . strOption
 
-bar :: ParserInfo Settings
-bar = info (helper <*> foo) fullDesc
+opts :: ParserInfo Settings
+opts = info (helper <*> cmdParser) fullDesc
 
 main :: IO ()
-main = execParser bar >>= \s -> do (_, chan) <- bindAMQPChan s
-                                   let handler = runReaderT $ (ReaderT . fmap liftIO $ publishEvent s chan)
-                                                            >> ReaderT printEvents
-                                   runReaderT (run handler) s
+main = execParser opts >>= \s -> do (_, chan) <- bindAMQPChan s
+                                    let handler = runReaderT $ (ReaderT . fmap liftIO $ publishEvent s chan)
+                                                             >> ReaderT printEvents
+                                    runReaderT (run handler) s
 
 run :: (MonadReader Settings m, MonadIO m) => (Event -> m a) -> m ()
 run f = runEvents $ getData >>= \r -> (getEvents r handlers) >> inspectRateLimit r
@@ -78,7 +78,7 @@ getData = do settings <- ask
                x   -> throwError $ StatusError x
 
 getEvents :: (AsValue body, Applicative m) => Wreq.Response body -> (Event -> m ()) -> m ()
-getEvents r k = traverse_ k . sortBy sortf $ r ^.. responseBody . values . toMaster . isOrg . test
+getEvents r k = traverse_ k . sortBy sortf $ r ^.. responseBody . values . toMaster . isOrg . event
   where sortf = curry $ uncurry compare . (view $ eventId `alongside` eventId)
 
 printEvents :: MonadIO m => Event -> m ()
@@ -87,11 +87,11 @@ printEvents = liftIO . print
 repo' :: AsValue s => ReifiedFold s Repo
 repo' = Repo <$> Fold (key "repo" . key "name" . _String)
 
-blah :: AsValue s => ReifiedFold s EventType
-blah = Fold $ key "type" . _String . et
+eventType' :: AsValue s => ReifiedFold s EventType
+eventType' = Fold $ key "type" . _String . et
 
-test :: AsValue s => Fold s Event
-test = runFold $ Event <$> (Fold $ key "id" . _String . _Integer) <*> blah <*> repo'
+event :: AsValue s => Fold s Event
+event = runFold $ Event <$> (Fold $ key "id" . _String . _Integer) <*> eventType' <*> repo'
 
 toMaster :: (AsValue s, Choice p, Applicative f) => Optic' p f s s
 toMaster = filtered . has $ key "payload" . key "ref" . filtered (== "refs/heads/master")
